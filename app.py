@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
-from plotly.subplots import make_subplots
 from statsmodels.tsa.stattools import adfuller
 from pmdarima import auto_arima
 from sklearn.metrics import (
@@ -25,8 +24,7 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 #  CUSTOM CSS
 # ─────────────────────────────────────────────
-st.markdown(
-    """
+st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;600&display=swap');
     html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
@@ -45,15 +43,10 @@ st.markdown(
         text-transform: uppercase;
     }
     .metric-card .value {
-        font-size: 32px;
+        font-size: 28px;
         font-weight: 700;
         font-family: 'Space Mono', monospace;
         margin-top: 4px;
-    }
-    .metric-card .delta {
-        font-size: 12px;
-        margin-top: 2px;
-        color: #8b92a5;
     }
     .section-header {
         font-family: 'Space Mono', monospace;
@@ -64,9 +57,7 @@ st.markdown(
         margin-bottom: 4px;
     }
     </style>
-    """,
-    unsafe_allow_html=True,
-)
+""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
 #  LOAD DATA
@@ -81,12 +72,11 @@ def load_data():
 @st.cache_data
 def load_countries():
     try:
-        df = pd.read_csv("noaa_countries_2024.csv")
-        return df
+        return pd.read_csv("noaa_countries_2024.csv")
     except FileNotFoundError:
         return None
 
-df_raw      = load_data()
+df_raw       = load_data()
 df_countries = load_countries()
 
 # ─────────────────────────────────────────────
@@ -96,22 +86,19 @@ with st.sidebar:
     st.markdown("## 🌡️ NOAA GSOD")
     st.markdown("**Analisis Suhu Global 2022–2024**")
     st.divider()
-
     year_options   = sorted(df_raw["date"].dt.year.unique().tolist())
     selected_years = st.multiselect("Pilih Tahun", year_options, default=year_options)
-
     st.divider()
     st.markdown('<p class="section-header">Forecasting</p>', unsafe_allow_html=True)
     n_forecast = st.slider("Periode prediksi ke depan (bulan)", 3, 24, 12)
-
     st.divider()
     st.caption("Data: NOAA GSOD | BigQuery Public Dataset")
 
 # ─────────────────────────────────────────────
 #  FILTER DATA
 # ─────────────────────────────────────────────
-df         = df_raw[df_raw["date"].dt.year.isin(selected_years)].copy()
-df_indexed = df.set_index("date")
+df_clean   = df_raw[df_raw["date"].dt.year.isin(selected_years)].copy()
+df_indexed = df_clean.set_index("date")[["avg_temp","avg_max_temp","avg_min_temp"]]
 
 # ─────────────────────────────────────────────
 #  HEADER
@@ -124,45 +111,37 @@ st.markdown(
 st.divider()
 
 # ─────────────────────────────────────────────
-#  METRIC CARDS
+#  METRIC CARDS  — "Bulan Terdingin" dihapus
 # ─────────────────────────────────────────────
-avg_t      = df["avg_temp"].mean()
-max_t      = df["avg_max_temp"].max()
-min_t      = df["avg_min_temp"].min()
+avg_t = df_clean["avg_temp"].mean()
+max_t = df_clean["avg_max_temp"].max()
 
-# Bulan terpanas & terdingin
-df_monthly_mean = df.copy()
-df_monthly_mean["bulan_periode"] = df_monthly_mean["date"].dt.to_period("M")
-monthly_mean = df_monthly_mean.groupby("bulan_periode")["avg_temp"].mean()
-bulan_terpanas  = monthly_mean.idxmax().strftime("%B %Y")
-bulan_terdingin = monthly_mean.idxmin().strftime("%B %Y")
+_monthly        = df_clean.copy()
+_monthly["_periode"] = _monthly["date"].dt.to_period("M")
+_monthly_mean   = _monthly.groupby("_periode")["avg_temp"].mean()
+bulan_terpanas  = _monthly_mean.idxmax().strftime("%B %Y")
 
-col1, col2, col3, col4, col5 = st.columns(5)
+col1, col2, col3 = st.columns(3)
 cards = [
-    (col1, "Rata-rata Suhu",   f"{avg_t:.1f}°F"),
-    (col2, "Suhu Tertinggi",   f"{max_t:.1f}°F"),
-    (col3, "Suhu Terendah",    f"{min_t:.1f}°F"),
-    (col4, "Bulan Terpanas",   bulan_terpanas),
-    (col5, "Bulan Terdingin",  bulan_terdingin),
+    (col1, "Rata-rata Suhu", f"{avg_t:.1f}°F", "#EF9F27"),
+    (col2, "Suhu Tertinggi", f"{max_t:.1f}°F", "#D85A30"),
+    (col3, "Bulan Terpanas", bulan_terpanas,    "#D85A30"),
 ]
-colors = ["#EF9F27", "#D85A30", "#378ADD", "#D85A30", "#378ADD"]
 
-for (col, label, value), color in zip(cards, colors):
+for col, label, value, color in cards:
     with col:
         st.markdown(
-            f"""
-            <div class="metric-card">
+            f"""<div class="metric-card">
                 <div class="label">{label}</div>
                 <div class="value" style="color:{color}">{value}</div>
-            </div>
-            """,
+            </div>""",
             unsafe_allow_html=True,
         )
 
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-#  TAB LAYOUT
+#  TABS
 # ─────────────────────────────────────────────
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "Tren & Distribusi",
@@ -180,16 +159,16 @@ with tab1:
 
     fig_trend = go.Figure()
     fig_trend.add_trace(go.Scatter(
-        x=df["date"], y=df["avg_max_temp"],
+        x=df_clean["date"], y=df_clean["avg_max_temp"],
         name="Avg Max", line=dict(color="#D85A30", width=1, dash="dot"),
     ))
     fig_trend.add_trace(go.Scatter(
-        x=df["date"], y=df["avg_temp"],
+        x=df_clean["date"], y=df_clean["avg_temp"],
         name="Avg Temp", line=dict(color="#EF9F27", width=2),
         fill="tonexty", fillcolor="rgba(239,159,39,0.08)",
     ))
     fig_trend.add_trace(go.Scatter(
-        x=df["date"], y=df["avg_min_temp"],
+        x=df_clean["date"], y=df_clean["avg_min_temp"],
         name="Avg Min", line=dict(color="#378ADD", width=1, dash="dot"),
         fill="tonexty", fillcolor="rgba(55,138,221,0.06)",
     ))
@@ -204,8 +183,8 @@ with tab1:
     st.divider()
     st.markdown('<p class="section-header">Distribusi Temperatur Harian</p>', unsafe_allow_html=True)
 
-    mask_cold = df["avg_temp"] < 41
-    mask_hot  = df["avg_temp"] > 68
+    mask_cold = df_clean["avg_temp"] < 41
+    mask_hot  = df_clean["avg_temp"] > 68
     mask_norm = ~(mask_cold | mask_hot)
 
     fig_hist = go.Figure()
@@ -215,7 +194,7 @@ with tab1:
         (mask_hot,  "#D85A30", "Panas Ekstrem (> 68°F)"),
     ]:
         fig_hist.add_trace(go.Histogram(
-            x=df.loc[mask, "avg_temp"], nbinsx=20,
+            x=df_clean.loc[mask, "avg_temp"], nbinsx=20,
             name=label, marker_color=color, opacity=0.85,
         ))
     fig_hist.add_vline(
@@ -236,14 +215,7 @@ with tab1:
 with tab2:
     st.markdown('<p class="section-header">Pola Suhu Rata-rata per Bulan</p>', unsafe_allow_html=True)
 
-    df["bulan"]     = df["date"].dt.to_period("M").astype(str)
-    df["bulan_num"] = df["date"].dt.month
-    df["tahun"]     = df["date"].dt.year
-
-    monthly_avg = (
-        df_indexed.resample("ME")[["avg_temp", "avg_max_temp", "avg_min_temp"]]
-        .mean().reset_index()
-    )
+    monthly_avg = df_indexed.resample("ME").mean().reset_index()
 
     fig_monthly = go.Figure()
     fig_monthly.add_trace(go.Scatter(x=monthly_avg["date"], y=monthly_avg["avg_max_temp"], name="Avg Max", line=dict(color="#D85A30", width=2)))
@@ -258,11 +230,12 @@ with tab2:
     st.divider()
     st.markdown('<p class="section-header">Distribusi Cuaca Ekstrem per Bulan</p>', unsafe_allow_html=True)
 
-    df["panas_ekstrem"] = df["avg_temp"] > 68
-    df["dingin_ekstrem"] = df["avg_temp"] < 41
-    df["normal"] = ~(df["panas_ekstrem"] | df["dingin_ekstrem"])
-
-    extreme_monthly = df.groupby("bulan_num")[["panas_ekstrem", "dingin_ekstrem", "normal"]].sum()
+    df_tab2 = df_clean.copy()
+    df_tab2["bulan_num"]      = df_tab2["date"].dt.month
+    df_tab2["panas_ekstrem"]  = df_tab2["avg_temp"] > 68
+    df_tab2["dingin_ekstrem"] = df_tab2["avg_temp"] < 41
+    df_tab2["normal"]         = ~(df_tab2["panas_ekstrem"] | df_tab2["dingin_ekstrem"])
+    extreme_monthly = df_tab2.groupby("bulan_num")[["panas_ekstrem","dingin_ekstrem","normal"]].sum()
     month_labels = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"]
 
     fig_stacked = go.Figure()
@@ -277,10 +250,11 @@ with tab2:
 
     st.divider()
     st.markdown('<p class="section-header">Boxplot Suhu per Bulan</p>', unsafe_allow_html=True)
+    df_tab2["bulan_label"] = df_tab2["date"].dt.to_period("M").astype(str)
     fig_box = px.box(
-        df, x="bulan", y="avg_temp",
+        df_tab2, x="bulan_label", y="avg_temp",
         color_discrete_sequence=["#EF9F27"],
-        labels={"bulan": "Bulan", "avg_temp": "Suhu Rata-rata (°F)"},
+        labels={"bulan_label": "Bulan", "avg_temp": "Suhu Rata-rata (°F)"},
     )
     fig_box.update_layout(
         template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
@@ -296,12 +270,8 @@ with tab3:
     st.markdown('<p class="section-header">Top 10 Negara Terpanas & Terdingin (2024)</p>', unsafe_allow_html=True)
 
     if df_countries is None:
-        st.warning(
-            "⚠️ File `noaa_countries_2024.csv` belum ditemukan di repo. "
-            "Silakan download dari Colab dan upload ke GitHub."
-        )
+        st.warning("⚠️ File `noaa_countries_2024.csv` belum ditemukan. Silakan upload ke GitHub.")
         st.code(
-            "# Jalankan di Colab setelah df_countries = run_query(q_hotcold)\n"
             "df_countries.to_csv('noaa_countries_2024.csv', index=False)\n"
             "from google.colab import files\n"
             "files.download('noaa_countries_2024.csv')",
@@ -312,32 +282,25 @@ with tab3:
         df_cold = df_countries.tail(10).copy().iloc[::-1]
 
         col_hot, col_cold = st.columns(2)
-
         with col_hot:
             st.markdown("#### 🔴 10 Negara Terpanas")
             fig_hot = go.Figure(go.Bar(
-                x=df_hot["avg_temp"],
-                y=df_hot["country_code"],
-                orientation="h",
+                x=df_hot["avg_temp"], y=df_hot["country_code"], orientation="h",
                 marker_color="#D85A30",
                 text=df_hot["avg_temp"].round(1).astype(str) + "°F",
-                textposition="inside",
-                insidetextfont=dict(color="white", size=11),
+                textposition="inside", insidetextfont=dict(color="white", size=11),
             ))
             fig_hot.update_layout(
                 template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                 xaxis_title="Rata-rata Suhu (°F)", yaxis=dict(autorange="reversed"),
-                height=380, margin=dict(l=10, r=10, t=10, b=40),
-                showlegend=False,
+                height=380, margin=dict(l=10,r=10,t=10,b=40), showlegend=False,
             )
             st.plotly_chart(fig_hot, use_container_width=True)
 
         with col_cold:
             st.markdown("#### 🔵 10 Negara Terdingin")
             fig_cold = go.Figure(go.Bar(
-                x=df_cold["avg_temp"],
-                y=df_cold["country_code"],
-                orientation="h",
+                x=df_cold["avg_temp"], y=df_cold["country_code"], orientation="h",
                 marker_color="#378ADD",
                 text=df_cold["avg_temp"].round(1).astype(str) + "°F",
                 textposition="outside",
@@ -345,19 +308,16 @@ with tab3:
             fig_cold.update_layout(
                 template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                 xaxis_title="Rata-rata Suhu (°F)", yaxis=dict(autorange="reversed"),
-                height=380, margin=dict(l=10, r=10, t=10, b=40),
-                showlegend=False,
+                height=380, margin=dict(l=10,r=10,t=10,b=40), showlegend=False,
             )
             st.plotly_chart(fig_cold, use_container_width=True)
 
         st.divider()
         st.markdown('<p class="section-header">Semua Negara — Ranking Suhu</p>', unsafe_allow_html=True)
         fig_all = px.bar(
-            df_countries,
-            x="country_code", y="avg_temp",
-            color="avg_temp",
-            color_continuous_scale=["#378ADD", "#EF9F27", "#D85A30"],
-            labels={"country_code": "Kode Negara", "avg_temp": "Suhu Rata-rata (°F)"},
+            df_countries, x="country_code", y="avg_temp", color="avg_temp",
+            color_continuous_scale=["#378ADD","#EF9F27","#D85A30"],
+            labels={"country_code":"Kode Negara","avg_temp":"Suhu Rata-rata (°F)"},
         )
         fig_all.update_layout(
             template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
@@ -367,10 +327,11 @@ with tab3:
 
         st.divider()
         st.markdown('<p class="section-header">Tabel Data Negara</p>', unsafe_allow_html=True)
+        # background_gradient dihapus — membutuhkan matplotlib yang tidak tersedia
         st.dataframe(
-            df_countries.rename(columns={"country_code": "Kode Negara", "avg_temp": "Suhu Rata-rata (°F)"})
-            .style.background_gradient(subset=["Suhu Rata-rata (°F)"], cmap="RdYlBu_r"),
-            use_container_width=True, hide_index=True,
+            df_countries.rename(columns={"country_code": "Kode Negara", "avg_temp": "Suhu Rata-rata (°F)"}),
+            use_container_width=True,
+            hide_index=True,
         )
 
 
@@ -380,12 +341,18 @@ with tab3:
 with tab4:
     st.markdown('<p class="section-header">Analisis Korelasi Antar Variabel Suhu</p>', unsafe_allow_html=True)
 
-    corr = df[["avg_temp", "avg_max_temp", "avg_min_temp"]].corr()
+    # Gunakan df_clean agar tidak ada kolom tambahan
+    corr_cols = ["avg_temp", "avg_max_temp", "avg_min_temp"]
+    corr = df_clean[corr_cols].corr()
 
     fig_heatmap = go.Figure(go.Heatmap(
-        z=corr.values, x=corr.columns.tolist(), y=corr.index.tolist(),
+        z=corr.values,
+        x=corr.columns.tolist(),
+        y=corr.index.tolist(),
         colorscale="RdBu_r", zmin=-1, zmax=1,
-        text=corr.round(4).values, texttemplate="%{text}", textfont=dict(size=16),
+        text=np.round(corr.values, 4),
+        texttemplate="%{text}",
+        textfont=dict(size=16),
         showscale=True,
     ))
     fig_heatmap.update_layout(
@@ -397,21 +364,26 @@ with tab4:
     col_a, col_b = st.columns(2)
     with col_a:
         fig_sc1 = px.scatter(
-            df, x="avg_temp", y="avg_max_temp", opacity=0.4, trendline="ols",
+            df_clean, x="avg_temp", y="avg_max_temp", opacity=0.4, trendline="ols",
             color_discrete_sequence=["#D85A30"],
             labels={"avg_temp": "Avg Temp (°F)", "avg_max_temp": "Avg Max Temp (°F)"},
             title="avg_temp vs avg_max_temp",
         )
-        fig_sc1.update_layout(template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+        fig_sc1.update_layout(
+            template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"
+        )
         st.plotly_chart(fig_sc1, use_container_width=True)
+
     with col_b:
         fig_sc2 = px.scatter(
-            df, x="avg_temp", y="avg_min_temp", opacity=0.4, trendline="ols",
+            df_clean, x="avg_temp", y="avg_min_temp", opacity=0.4, trendline="ols",
             color_discrete_sequence=["#378ADD"],
             labels={"avg_temp": "Avg Temp (°F)", "avg_min_temp": "Avg Min Temp (°F)"},
             title="avg_temp vs avg_min_temp",
         )
-        fig_sc2.update_layout(template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+        fig_sc2.update_layout(
+            template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"
+        )
         st.plotly_chart(fig_sc2, use_container_width=True)
 
 
@@ -421,23 +393,28 @@ with tab4:
 with tab5:
     st.markdown('<p class="section-header">Stationarity Check — ADF Test</p>', unsafe_allow_html=True)
 
+    # Selalu pakai df_raw agar data lengkap untuk SARIMA
     ts_full    = df_raw.set_index("date")["avg_temp"]
     monthly_ts = ts_full.resample("ME").mean()
 
-    adf_result = adfuller(monthly_ts)
-    adf_diff   = adfuller(monthly_ts.diff().dropna())
+    adf_orig = adfuller(monthly_ts)
+    adf_diff = adfuller(monthly_ts.diff().dropna())
 
     col_adf1, col_adf2 = st.columns(2)
     with col_adf1:
-        st.metric("ADF Statistic (original)", f"{adf_result[0]:.4f}")
-        st.metric("p-value (original)", f"{adf_result[1]:.6f}",
-                  delta="Stasioner ✅" if adf_result[1] < 0.05 else "Tidak Stasioner ❌",
-                  delta_color="normal")
+        st.metric("ADF Statistic (original)", f"{adf_orig[0]:.4f}")
+        st.metric(
+            "p-value (original)", f"{adf_orig[1]:.6f}",
+            delta="Stasioner ✅" if adf_orig[1] < 0.05 else "Tidak Stasioner ❌",
+            delta_color="normal",
+        )
     with col_adf2:
         st.metric("ADF Statistic (setelah differencing)", f"{adf_diff[0]:.4f}")
-        st.metric("p-value (setelah differencing)", f"{adf_diff[1]:.6f}",
-                  delta="Stasioner ✅" if adf_diff[1] < 0.05 else "Tidak Stasioner ❌",
-                  delta_color="normal")
+        st.metric(
+            "p-value (setelah differencing)", f"{adf_diff[1]:.6f}",
+            delta="Stasioner ✅" if adf_diff[1] < 0.05 else "Tidak Stasioner ❌",
+            delta_color="normal",
+        )
 
     st.divider()
     st.markdown('<p class="section-header">Train / Test Split & SARIMA Model</p>', unsafe_allow_html=True)
@@ -450,28 +427,26 @@ with tab5:
     col_tt2.info(f"🔵 **Test size:** {len(test)} bulan (Jan–Des 2024)")
 
     @st.cache_data
-    def fit_sarima(train_values, n_periods_test, n_periods_forecast):
-        model = auto_arima(
-            train_values, seasonal=True, m=12, stepwise=True,
+    def fit_sarima(train_vals, n_test, n_future):
+        mdl = auto_arima(
+            train_vals, seasonal=True, m=12, stepwise=True,
             suppress_warnings=True, error_action="ignore",
         )
-        forecast_test   = model.predict(n_periods=n_periods_test)
-        forecast_future = model.predict(n_periods=n_periods_forecast)
-        return model, forecast_test, forecast_future
+        fc_test   = mdl.predict(n_periods=n_test)
+        fc_future = mdl.predict(n_periods=n_future)
+        return mdl, fc_test, fc_future
 
     with st.spinner("Melatih model SARIMA... ⏳"):
-        model, forecast_test, forecast_future = fit_sarima(
-            train.values, len(test), n_forecast
-        )
+        model, fc_test, fc_future = fit_sarima(train.values, len(test), n_forecast)
 
     st.success(f"Model terpilih: **{model.order}** x **{model.seasonal_order}**")
 
     st.divider()
     st.markdown('<p class="section-header">Evaluasi Model</p>', unsafe_allow_html=True)
 
-    mae  = mean_absolute_error(test.values, forecast_test)
-    rmse = np.sqrt(mean_squared_error(test.values, forecast_test))
-    mape = mean_absolute_percentage_error(test.values, forecast_test) * 100
+    mae  = mean_absolute_error(test.values, fc_test)
+    rmse = np.sqrt(mean_squared_error(test.values, fc_test))
+    mape = mean_absolute_percentage_error(test.values, fc_test) * 100
 
     c1, c2, c3 = st.columns(3)
     c1.metric("MAE",  f"{mae:.4f}")
@@ -481,15 +456,19 @@ with tab5:
     st.divider()
     st.markdown('<p class="section-header">Visualisasi Forecast</p>', unsafe_allow_html=True)
 
-    last_date    = monthly_ts.index[-1]
-    future_dates = pd.date_range(last_date + pd.DateOffset(months=1), periods=n_forecast, freq="ME")
+    future_dates = pd.date_range(
+        monthly_ts.index[-1] + pd.DateOffset(months=1), periods=n_forecast, freq="ME"
+    )
 
     fig_fc = go.Figure()
-    fig_fc.add_trace(go.Scatter(x=train.index, y=train.values, name="Train", line=dict(color="#EF9F27", width=2)))
-    fig_fc.add_trace(go.Scatter(x=test.index,  y=test.values,  name="Aktual (Test)", line=dict(color="#ffffff", width=2)))
-    fig_fc.add_trace(go.Scatter(x=test.index,  y=forecast_test,name="Forecast Test", line=dict(color="#D85A30", width=2, dash="dash")))
-    fig_fc.add_trace(go.Scatter(x=future_dates,y=forecast_future,
-        name=f"Forecast {n_forecast} Bulan ke Depan", line=dict(color="#4ade80", width=2, dash="dot")))
+    fig_fc.add_trace(go.Scatter(x=train.index,  y=train.values, name="Train",         line=dict(color="#EF9F27", width=2)))
+    fig_fc.add_trace(go.Scatter(x=test.index,   y=test.values,  name="Aktual (Test)", line=dict(color="#ffffff", width=2)))
+    fig_fc.add_trace(go.Scatter(x=test.index,   y=fc_test,      name="Forecast Test", line=dict(color="#D85A30", width=2, dash="dash")))
+    fig_fc.add_trace(go.Scatter(
+        x=future_dates, y=fc_future,
+        name=f"Forecast {n_forecast} Bulan ke Depan",
+        line=dict(color="#4ade80", width=2, dash="dot"),
+    ))
     fig_fc.update_layout(
         template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         xaxis_title="Bulan", yaxis_title="Suhu Rata-rata (°F)", hovermode="x unified",
@@ -499,8 +478,11 @@ with tab5:
 
     st.divider()
     st.markdown('<p class="section-header">Tabel Nilai Forecast</p>', unsafe_allow_html=True)
-    df_forecast_table = pd.DataFrame({
-        "Bulan": future_dates.strftime("%B %Y"),
-        "Prediksi Suhu (°F)": forecast_future.round(4),
-    })
-    st.dataframe(df_forecast_table, use_container_width=True, hide_index=True)
+    st.dataframe(
+        pd.DataFrame({
+            "Bulan": future_dates.strftime("%B %Y"),
+            "Prediksi Suhu (°F)": np.round(fc_future, 4),
+        }),
+        use_container_width=True,
+        hide_index=True,
+    )
